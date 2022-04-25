@@ -18,6 +18,8 @@ import (
 
 	"github.com/hashicorp/consul-api-gateway/internal/core"
 	"github.com/hashicorp/consul-api-gateway/internal/k8s/gatewayclient/mocks"
+	"github.com/hashicorp/consul-api-gateway/internal/k8s/reconciler/common"
+	rstate "github.com/hashicorp/consul-api-gateway/internal/k8s/reconciler/state"
 	rstatus "github.com/hashicorp/consul-api-gateway/internal/k8s/reconciler/status"
 	"github.com/hashicorp/consul-api-gateway/internal/store"
 	storeMocks "github.com/hashicorp/consul-api-gateway/internal/store/mocks"
@@ -467,6 +469,10 @@ func TestListenerStatusConditions(t *testing.T) {
 func TestListenerCanBind(t *testing.T) {
 	t.Parallel()
 
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
+
 	// alternative type
 	listener := NewK8sListener(&gwv1beta1.Gateway{}, gwv1beta1.Listener{}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
@@ -479,9 +485,7 @@ func TestListenerCanBind(t *testing.T) {
 	listener = NewK8sListener(&gwv1beta1.Gateway{}, gwv1beta1.Listener{}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	canBind, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	canBind, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 
@@ -493,7 +497,7 @@ func TestListenerCanBind(t *testing.T) {
 	}, gwv1beta1.Listener{}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	canBind, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	canBind, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
 				ParentRefs: []gwv1alpha2.ParentReference{{
@@ -501,9 +505,7 @@ func TestListenerCanBind(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.True(t, canBind)
 
@@ -516,7 +518,7 @@ func TestListenerCanBind(t *testing.T) {
 		Logger: hclog.NewNullLogger(),
 	})
 	listener.status.Ready.Invalid = errors.New("invalid")
-	canBind, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	canBind, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
 				ParentRefs: []gwv1alpha2.ParentReference{{
@@ -524,15 +526,17 @@ func TestListenerCanBind(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 }
 
 func TestListenerCanBind_RouteKind(t *testing.T) {
 	t.Parallel()
+
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
 
 	routeMeta := meta.TypeMeta{}
 	routeMeta.SetGroupVersionKind(schema.GroupVersionKind{
@@ -554,7 +558,7 @@ func TestListenerCanBind_RouteKind(t *testing.T) {
 	})
 	require.NoError(t, listener.Validate(context.Background()))
 
-	canBind, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.UDPRoute{
+	canBind, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.UDPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.UDPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -563,9 +567,7 @@ func TestListenerCanBind_RouteKind(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 
@@ -579,8 +581,8 @@ func TestListenerCanBind_RouteKind(t *testing.T) {
 	}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	listener.supportedKinds = supportedProtocols[gwv1beta1.HTTPProtocolType]
-	_, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.TCPRoute{
+	listener.supportedKinds = common.SupportedKindsFor(gwv1beta1.HTTPProtocolType)
+	_, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.TCPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.TCPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -590,14 +592,16 @@ func TestListenerCanBind_RouteKind(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.Error(t, err)
 }
 
 func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 	t.Parallel()
+
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
 
 	listenerName := gwv1beta1.SectionName("listener")
 	routeSectionName := gwv1alpha2.SectionName("listener")
@@ -627,8 +631,8 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 	}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	listener.supportedKinds = supportedProtocols[gwv1beta1.HTTPProtocolType]
-	_, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	listener.supportedKinds = common.SupportedKindsFor(gwv1beta1.HTTPProtocolType)
+	_, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -639,11 +643,9 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.Error(t, err)
-	canBind, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	canBind, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -653,9 +655,7 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 
@@ -681,8 +681,8 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 	}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	listener.supportedKinds = supportedProtocols[gwv1beta1.HTTPProtocolType]
-	_, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	listener.supportedKinds = common.SupportedKindsFor(gwv1beta1.HTTPProtocolType)
+	_, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -693,11 +693,9 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.Error(t, err)
-	_, err = listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	_, err = listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -707,14 +705,16 @@ func TestListenerCanBind_AllowedNamespaces(t *testing.T) {
 				}},
 			},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.Error(t, err)
 }
 
 func TestListenerCanBind_HostnameMatch(t *testing.T) {
 	t.Parallel()
+
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
 
 	routeMeta := meta.TypeMeta{}
 	routeMeta.SetGroupVersionKind(schema.GroupVersionKind{
@@ -736,8 +736,8 @@ func TestListenerCanBind_HostnameMatch(t *testing.T) {
 	}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	listener.supportedKinds = supportedProtocols[gwv1beta1.HTTPProtocolType]
-	_, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	listener.supportedKinds = common.SupportedKindsFor(gwv1beta1.HTTPProtocolType)
+	_, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -748,12 +748,10 @@ func TestListenerCanBind_HostnameMatch(t *testing.T) {
 			},
 			Hostnames: []gwv1alpha2.Hostname{"other"},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.Error(t, err)
 
-	canBind, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	canBind, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
@@ -763,9 +761,7 @@ func TestListenerCanBind_HostnameMatch(t *testing.T) {
 			},
 			Hostnames: []gwv1alpha2.Hostname{"other"},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 }
@@ -773,19 +769,24 @@ func TestListenerCanBind_HostnameMatch(t *testing.T) {
 func TestListenerCanBind_NameMatch(t *testing.T) {
 	t.Parallel()
 
-	listenerName := gwv1beta1.SectionName("listener")
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
+
+	name := gwv1beta1.SectionName("listener")
 	otherName := gwv1alpha2.SectionName("other")
 	listener := NewK8sListener(&gwv1beta1.Gateway{
 		ObjectMeta: meta.ObjectMeta{
 			Name: "gateway",
 		},
 	}, gwv1beta1.Listener{
-		Name:     listenerName,
+		Name:     name,
 		Protocol: gwv1beta1.HTTPProtocolType,
 	}, K8sListenerConfig{
 		Logger: hclog.NewNullLogger(),
 	})
-	canBind, err := listener.CanBind(context.Background(), NewK8sRoute(&gwv1alpha2.HTTPRoute{
+
+	canBind, err := listener.CanBind(context.Background(), factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		Spec: gwv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: gwv1alpha2.CommonRouteSpec{
 				ParentRefs: []gwv1alpha2.ParentReference{{
@@ -795,9 +796,7 @@ func TestListenerCanBind_NameMatch(t *testing.T) {
 			},
 			Hostnames: []gwv1alpha2.Hostname{"other"},
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}))
+	}, rstate.NewRouteState()))
 	require.NoError(t, err)
 	require.False(t, canBind)
 }

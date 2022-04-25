@@ -64,6 +64,7 @@ func TestGatewayClassValidate(t *testing.T) {
 
 	client.EXPECT().GetGatewayClassConfig(gomock.Any(), gomock.Any()).Return(nil, nil)
 	require.NoError(t, gatewayClass.Validate(context.Background()))
+
 	require.Equal(t, rstatus.GatewayClassConditionReasonInvalidParameters, gatewayClass.status.Accepted.Condition(0).Reason)
 	require.False(t, gatewayClass.IsValid())
 

@@ -1,41 +1,62 @@
-package reconciler
+package converters
 
 import (
-	"k8s.io/apimachinery/pkg/types"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/hashicorp/consul-api-gateway/internal/core"
+	"github.com/hashicorp/consul-api-gateway/internal/k8s/reconciler/state"
 	"github.com/hashicorp/consul-api-gateway/internal/k8s/service"
 )
 
-func HTTPRouteID(namespacedName types.NamespacedName) string {
-	return "http-" + namespacedName.String()
+type HTTPRouteConverter struct {
+	namespace string
+	hostname  string
+	meta      map[string]string
+	route     *gwv1alpha2.HTTPRoute
+	state     *state.RouteState
 }
 
-func convertHTTPRoute(namespace, hostname, prefix string, meta map[string]string, route *gwv1alpha2.HTTPRoute, k8sRoute *K8sRoute) *core.ResolvedRoute {
+type HTTPRouteConverterConfig struct {
+	Namespace string
+	Hostname  string
+	Meta      map[string]string
+	Route     *gwv1alpha2.HTTPRoute
+	State     *state.RouteState
+}
+
+func NewHTTPRouteConverter(config HTTPRouteConverterConfig) *HTTPRouteConverter {
+	return &HTTPRouteConverter{
+		namespace: config.Namespace,
+		hostname:  config.Hostname,
+		meta:      config.Meta,
+		route:     config.Route,
+		state:     config.State,
+	}
+}
+
+func (c *HTTPRouteConverter) Convert() core.ResolvedRoute {
 	hostnames := []string{}
-	for _, hostname := range route.Spec.Hostnames {
+	for _, hostname := range c.route.Spec.Hostnames {
 		hostnames = append(hostnames, string(hostname))
 	}
 	if len(hostnames) == 0 {
-		if hostname == "" {
-			hostname = "*"
+		if c.hostname == "" {
+			c.hostname = "*"
 		}
-		hostnames = append(hostnames, hostname)
+		hostnames = append(hostnames, c.hostname)
 	}
-	name := prefix + route.Name
+	name := c.route.Name
 
-	resolved := core.NewHTTPRouteBuilder().
+	return core.NewHTTPRouteBuilder().
 		WithName(name).
 		// we always use the listener namespace for the routes
 		// themselves, while the services they route to might
 		// be in different namespaces
-		WithNamespace(namespace).
+		WithNamespace(c.namespace).
 		WithHostnames(hostnames).
-		WithMeta(meta).
-		WithRules(httpReferencesToRules(k8sRoute.references)).
+		WithMeta(c.meta).
+		WithRules(httpReferencesToRules(c.state.References)).
 		Build()
-	return &resolved
 }
 
 var methodMappings = map[gwv1alpha2.HTTPMethod]core.HTTPMethod{

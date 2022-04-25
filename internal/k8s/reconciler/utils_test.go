@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 
 	"github.com/hashicorp/consul-api-gateway/internal/k8s/gatewayclient/mocks"
+	"github.com/hashicorp/consul-api-gateway/internal/k8s/reconciler/state"
 )
 
 func TestRouteMatchesListener(t *testing.T) {
@@ -69,6 +70,10 @@ func TestHostnamesMatch(t *testing.T) {
 func TestRouteKindIsAllowedForListener(t *testing.T) {
 	t.Parallel()
 
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
+
 	routeMeta := meta.TypeMeta{}
 	routeMeta.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   gwv1alpha2.GroupVersion.Group,
@@ -78,23 +83,23 @@ func TestRouteKindIsAllowedForListener(t *testing.T) {
 	require.True(t, routeKindIsAllowedForListener([]gwv1beta1.RouteGroupKind{{
 		Group: (*gwv1beta1.Group)(&gwv1alpha2.GroupVersion.Group),
 		Kind:  "HTTPRoute",
-	}}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	})))
+	}, state.NewRouteState())))
 	require.False(t, routeKindIsAllowedForListener([]gwv1beta1.RouteGroupKind{{
 		Group: (*gwv1beta1.Group)(&gwv1alpha2.GroupVersion.Group),
 		Kind:  "TCPRoute",
-	}}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		TypeMeta: routeMeta,
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	})))
+	}, state.NewRouteState())))
 }
 
 func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 	t.Parallel()
+
+	factory := NewFactory(FactoryConfig{
+		Logger: hclog.NewNullLogger(),
+	})
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -107,13 +112,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 		Namespaces: &gwv1beta1.RouteNamespaces{
 			From: &same,
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "expected",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.True(t, allowed)
 
@@ -121,13 +124,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 		Namespaces: &gwv1beta1.RouteNamespaces{
 			From: &same,
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "other",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.False(t, allowed)
 
@@ -137,13 +138,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 		Namespaces: &gwv1beta1.RouteNamespaces{
 			From: &all,
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "other",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.True(t, allowed)
 
@@ -168,13 +167,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 				},
 			},
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "expected",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.False(t, allowed)
 
@@ -188,13 +185,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 				},
 			},
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "expected",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.True(t, allowed)
 
@@ -208,13 +203,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 				}},
 			},
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "expected",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.Error(t, err)
 
 	// unknown
@@ -223,13 +216,11 @@ func TestRouteAllowedForListenerNamespaces(t *testing.T) {
 		Namespaces: &gwv1beta1.RouteNamespaces{
 			From: &unknown,
 		},
-	}, NewK8sRoute(&gwv1alpha2.HTTPRoute{
+	}, factory.NewRoute(&gwv1alpha2.HTTPRoute{
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "expected",
 		},
-	}, K8sRouteConfig{
-		Logger: hclog.NewNullLogger(),
-	}), client)
+	}, state.NewRouteState()), client)
 	require.NoError(t, err)
 	require.False(t, allowed)
 }
@@ -324,44 +315,6 @@ func TestListenerStatusEqual(t *testing.T) {
 			Group: &groupTwo,
 			Kind:  kindTwo,
 		}},
-	}))
-}
-
-func TestListenerStatusesEqual(t *testing.T) {
-	t.Parallel()
-
-	require.True(t, listenerStatusesEqual([]gwv1beta1.ListenerStatus{}, []gwv1beta1.ListenerStatus{}))
-	require.False(t, listenerStatusesEqual([]gwv1beta1.ListenerStatus{}, []gwv1beta1.ListenerStatus{{}}))
-	require.False(t, listenerStatusesEqual([]gwv1beta1.ListenerStatus{{
-		Name: "expected",
-	}}, []gwv1beta1.ListenerStatus{{
-		Name: "other",
-	}}))
-}
-
-func TestParentStatusEqual(t *testing.T) {
-	t.Parallel()
-
-	require.True(t, parentStatusEqual(gwv1alpha2.RouteParentStatus{}, gwv1alpha2.RouteParentStatus{}))
-	require.False(t, parentStatusEqual(gwv1alpha2.RouteParentStatus{}, gwv1alpha2.RouteParentStatus{
-		ControllerName: "other",
-	}))
-	require.False(t, parentStatusEqual(gwv1alpha2.RouteParentStatus{}, gwv1alpha2.RouteParentStatus{
-		ParentRef: gwv1alpha2.ParentReference{
-			Name: "other",
-		},
-	}))
-}
-
-func TestGatewayStatusEqual(t *testing.T) {
-	t.Parallel()
-
-	require.True(t, gatewayStatusEqual(gwv1beta1.GatewayStatus{}, gwv1beta1.GatewayStatus{}))
-	require.False(t, gatewayStatusEqual(gwv1beta1.GatewayStatus{}, gwv1beta1.GatewayStatus{
-		Conditions: []meta.Condition{{}},
-	}))
-	require.False(t, gatewayStatusEqual(gwv1beta1.GatewayStatus{}, gwv1beta1.GatewayStatus{
-		Listeners: []gwv1beta1.ListenerStatus{{}},
 	}))
 }
 

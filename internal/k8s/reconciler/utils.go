@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -250,18 +249,6 @@ func toNamespaceSet(name string, labels map[string]string) klabels.Labels {
 	return klabels.Set(ret)
 }
 
-func sortParents(parents []gwv1alpha2.RouteParentStatus) []gwv1alpha2.RouteParentStatus {
-	for _, parent := range parents {
-		sort.SliceStable(parent.Conditions, func(i, j int) bool {
-			return asJSON(parent.Conditions[i]) < asJSON(parent.Conditions[j])
-		})
-	}
-	sort.SliceStable(parents, func(i, j int) bool {
-		return asJSON(parents[i]) < asJSON(parents[j])
-	})
-	return parents
-}
-
 func asJSON(item interface{}) string {
 	data, err := json.Marshal(item)
 	if err != nil {
@@ -272,18 +259,6 @@ func asJSON(item interface{}) string {
 		panic(err)
 	}
 	return string(data)
-}
-
-func parseParent(stringified string) gwv1alpha2.ParentReference {
-	var ref gwv1alpha2.ParentReference
-	if err := json.Unmarshal([]byte(stringified), &ref); err != nil {
-		// everything passed to this internally should be
-		// deserializable, if something is passed to it that
-		// isn't, just panic since it's a usage error at
-		// that point
-		panic(err)
-	}
-	return ref
 }
 
 func conditionEqual(a, b metav1.Condition) bool {
