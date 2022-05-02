@@ -68,7 +68,7 @@ func (d *GatewayDeployer) ensureServiceAccount(ctx context.Context, config apigw
 func (d *GatewayDeployer) ensureDeployment(ctx context.Context, namespace string, config apigwv1alpha1.GatewayClassConfig, gateway *gwv1beta1.Gateway) error {
 	deployment := d.Deployment(namespace, config, gateway)
 	mutated := deployment.DeepCopy()
-	
+
 	updated, err := d.client.CreateOrUpdateDeployment(ctx, mutated, func() error {
 		mutated = apigwv1alpha1.MergeDeployment(deployment, mutated)
 		return d.client.SetControllerOwnership(gateway, mutated)
@@ -76,7 +76,7 @@ func (d *GatewayDeployer) ensureDeployment(ctx context.Context, namespace string
 	if err != nil {
 		return fmt.Errorf("failed to create or update gateway deployment: %w", err)
 	}
-	
+
 	if updated && d.logger.IsTrace() {
 		data, err := json.MarshalIndent(mutated, "", "  ")
 		if err == nil {
@@ -88,20 +88,24 @@ func (d *GatewayDeployer) ensureDeployment(ctx context.Context, namespace string
 }
 
 func (d *GatewayDeployer) ensureService(ctx context.Context, config apigwv1alpha1.GatewayClassConfig, gateway *gwv1beta1.Gateway) error {
-	if service := d.Service(config, gateway); service != nil {
-		mutated := service.DeepCopy()
-		if updated, err := d.client.CreateOrUpdateService(ctx, mutated, func() error {
-			mutated = apigwv1alpha1.MergeService(service, mutated)
-			return d.client.SetControllerOwnership(gateway, mutated)
-		}); err != nil {
-			return fmt.Errorf("failed to create or update gateway service: %w", err)
-		} else if updated {
-			if d.logger.IsTrace() {
-				data, err := json.MarshalIndent(mutated, "", "  ")
-				if err == nil {
-					d.logger.Trace("created or updated gateway service", "service", string(data))
-				}
-			}
+	service := d.Service(config, gateway)
+	if service == nil {
+		return nil
+	}
+
+	mutated := service.DeepCopy()
+	updated, err := d.client.CreateOrUpdateService(ctx, mutated, func() error {
+		mutated = apigwv1alpha1.MergeService(service, mutated)
+		return d.client.SetControllerOwnership(gateway, mutated)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create or update gateway service: %w", err)
+	}
+
+	if updated && d.logger.IsTrace() {
+		data, err := json.MarshalIndent(mutated, "", "  ")
+		if err == nil {
+			d.logger.Trace("created or updated gateway service", "service", string(data))
 		}
 	}
 
